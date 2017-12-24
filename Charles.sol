@@ -35,12 +35,19 @@ contract Charles{
     
     mapping (address => Commitment) public commited;
     
+    /// @notice commit yourself publicly to  '`_pledge`' with `_witness` each `_interval`s for `_frequency` times, failing to do so send 1/`_frequency` of `msg.value` to `_anticharity`  
+    /// @param _pledge your pledge
+    /// @param _witness in front of a witness
+    /// @param _interval how long one period of the pledge is in seconds
+    /// @param _frequency number of periods to consider
+    /// @param _anticharity
     function commitToPublicly(string _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity) external payable{
         commitTo(keccak256( _pledge),  _witness,  _interval,  _frequency, _anticharity);
         NewPublicCommitmentCreated(msg.sender, _pledge, _witness, _interval, _frequency, _anticharity);
     }
     event NewPublicCommitmentCreated(address indexed committer, string pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity);
     
+    /// @dev same as commitToPublicly but pledge is private
     function commitToPrivately(bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity) public payable
     {
         commitTo(_pledge, _witness, _interval, _frequency, _anticharity);
@@ -49,6 +56,7 @@ contract Charles{
     }
     event NewPrivateCommitmentCreated(address indexed committer, bytes32 pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity);
     
+    /// @dev instantiation of a commitment
     function commitTo(bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity) internal {
         require(this.balance == 0); // old commitment should be already drained to create new
         require(msg.value % _frequency == 0); // we only accept integer divisible amounts
@@ -57,6 +65,8 @@ contract Charles{
         commited[msg.sender]= c;
     }
     
+    /// @notice `_committer` breached his commitment during period `_period`: `_isBreached`
+    /// @dev adds anticharity or beneficiary to giveTo[_period]
     function witnessTo(address _committer, uint _period, bool _isBreached) external 
     {
         var c = commited[_committer];
@@ -67,15 +77,18 @@ contract Charles{
         c.giveTo[_period] = beneficiary;
         CommitmentWitnessed(c.committer, c.pledge, c.witness, _period, _isBreached);
     }
-    event CommitmentWitnessed(address committer, bytes32 pledge, address witness, uint period, bool isBreached);
+    event CommitmentWitnessed(address indexed committer, bytes32 indexed pledge, address witness, uint period, bool isBreached);
     
+    /// @notice since the witness didn't monitor period `_period`, as a committer I reclaim the period's bounty 
     function reclaimUnwitnessedPeriod(uint _period) external{
         var c = commited[msg.sender];
         require( c.giveTo[_period] != ALREADY_PAYED);
-        require (now > c.startTime + _period * c.interval+1); //possible only if you let whitness time for one period after this
+        require (now > c.startTime + (_period + 1) * c.interval); //possible only if you let whitness time for one period after this
         c.giveTo[_period] =  c.committer;
     }
+    event ReclaimedUnwitnessedBounty(address committer, bytes32 indexed pledge, uint period);
     
+    /// @notice payout to anticharity or committer for period `_period`
     function payout(uint _period) public payable{
         var c = commited[msg.sender];
         var amount = c.amount / c.frequency; //TODO: solve binary division rounding problem
@@ -84,8 +97,8 @@ contract Charles{
         c.giveTo[_period]=  ALREADY_PAYED;
         beneficiary.transfer(amount); 
         
-        PayedOut(beneficiary, amount, c.pledge);
+        PaidOut(beneficiary, amount, c.pledge);
     }
-    event PayedOut(address _commiter, uint amount, bytes32 pledge);
+    event PaidOut(address indexed beneficiary, uint amount, bytes32 indexed pledge);
     
 }
