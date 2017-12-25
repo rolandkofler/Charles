@@ -70,6 +70,7 @@ contract Charles{
     /// @dev adds anticharity or beneficiary to giveTo[_period]
     /// time constraints are not enforced on purpose, a witness can witness into the future
     /// Philosophically, witness has to be trusted.
+    /// If not paid out already you can always overwrite your decision
     function witnessTo(address _committer, uint _period, bool _isBreached) external 
     {
         var c = commited[_committer];
@@ -98,8 +99,11 @@ contract Charles{
     /// flaw here is that its not automatically sent to the anticharity
     /// @param _period which periods budget should be payed out?
     /// @param _committer which committer are we talking about?
+    /// only witness or committer can payout.
     function payout(uint _period, address _committer) public payable{
+       
         var c = commited[_committer];
+        require (msg.sender == c.committer || msg.sender == c.witness);
         var amount = c.amount / c.frequency; //TODO: solve binary division rounding problem
         var beneficiary = c.giveTo[_period];
         require (beneficiary != address(0));
