@@ -6,9 +6,9 @@ contract ACharlesTester{
     
     function tst() public payable {
         bytes32 pledge= keccak256("I want to not drink alcohol more than once a week. My witness will randomly check by asking me to blow into a tester");
-        c.commitToPrivately(now, pledge, this, 1 days , 14, c.THE_DAO_HACKER());
+        c.commitToPrivately(now, pledge, this, 1 days , 14, c.THE_DAO_HACKER(), 1000000);
         c.witnessTo(this, 0, true);
-        c.payout(0, this);
+        
     }
 }
 
@@ -31,9 +31,19 @@ contract Charles{
         uint startTime;
         uint amount;
         address[] giveTo;
+        uint remainingBudget;
+        uint testemonyReward;
     }
     
     mapping (address => Commitment) public commited;
+    
+    /** Getters **/
+    function getGiveTo(address _committer, uint _period) public view returns (address){
+        var c = commited[_committer];
+        return c.giveTo[_period];
+    }
+    
+    
     
     /// @notice commit yourself publicly to  '`_pledge`' with `_witness` each `_interval`s for `_frequency` times, failing to do so send 1/`_frequency` of `msg.value` to `_anticharity`  
     /// @param _starttime when should your committment start?
@@ -42,27 +52,30 @@ contract Charles{
     /// @param _interval how long one period of the pledge is in seconds
     /// @param _frequency number of periods to consider
     /// @param _anticharity what you hate?
-    function commitToPublicly(uint _starttime, string _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity) external payable{
-        commitTo(_starttime, keccak256( _pledge),  _witness,  _interval,  _frequency, _anticharity);
-        NewPublicCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity);
+    function commitToPublicly(uint _starttime, string _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) external payable{
+        commitTo(_starttime, keccak256( _pledge),  _witness,  _interval,  _frequency, _anticharity, _testemonyReward);
+        NewPublicCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward);
     }
-    event NewPublicCommitmentCreated(uint _starttime, address indexed committer, string pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity);
+    event NewPublicCommitmentCreated(uint _starttime, address indexed committer, string pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity, uint _testemonyReward);
     
     /// @dev same as commitToPublicly but pledge is private
-    function commitToPrivately(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity) public payable
+    function commitToPrivately(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) public payable
     {
-        commitTo(_starttime, _pledge, _witness, _interval, _frequency, _anticharity);
+        commitTo(_starttime, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward);
         
-        NewPrivateCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity);
+        NewPrivateCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward);
     }
-    event NewPrivateCommitmentCreated(uint _starttime, address indexed committer, bytes32 pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity);
+    event NewPrivateCommitmentCreated(uint _starttime, address indexed committer, bytes32 pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity, uint _testemonyReward);
     
     /// @dev instantiation of a commitment
-    function commitTo(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity) internal {
-        require(this.balance == 0); // old commitment should be already drained to create new
-        require(msg.value % _frequency == 0); // we only accept integer divisible amounts
+    function commitTo(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) internal {
+        require(commited[msg.sender].remainingBudget == 0); // old commitment should be already drained to create new
+        var totalBounty = msg.value - (_frequency * _testemonyReward);
+        require(totalBounty % _frequency == 0); // we only accept integer divisible amounts
+        require( _anticharity != ALREADY_PAYED); // reserved address 
+        require( _anticharity != address(0)); // reserved address
         address[] memory w = new address[](_frequency);
-        var c =Commitment(msg.sender,_anticharity,  _pledge, _witness, _interval, _frequency, _starttime, msg.value, w);
+        var c =Commitment(msg.sender,_anticharity,  _pledge, _witness, _interval, _frequency, _starttime, msg.value, w, totalBounty, _testemonyReward);
         commited[msg.sender]= c;
     }
     
@@ -76,10 +89,10 @@ contract Charles{
         var c = commited[_committer];
         require (c.witness == msg.sender);
         require( c.giveTo[_period] != ALREADY_PAYED);
-        
         var beneficiary= _isBreached ? c.anticharity : c.committer;
         c.giveTo[_period] = beneficiary;
         CommitmentWitnessed(c.committer, c.pledge, c.witness, _period, _isBreached);
+        payout(_period, c.committer);
     }
     event CommitmentWitnessed(address indexed committer, bytes32 indexed pledge, address witness, uint period, bool isBreached);
     
@@ -91,8 +104,10 @@ contract Charles{
         require( c.giveTo[_period] != ALREADY_PAYED);
         require (now > c.startTime + (_period + 1) * c.interval); //possible only if you let whitness time for one period after this
         c.giveTo[_period] =  c.committer;
+        ReclaimedUnwitnessedBounty(c.committer, c.pledge, _period);
+        payout(_period, c.committer);
     }
-    event ReclaimedUnwitnessedBounty(address committer, bytes32 indexed pledge, uint period);
+    event ReclaimedUnwitnessedBounty(address indexed committer, bytes32 indexed pledge, uint period);
     
     /// @notice payout to anticharity or committer for period `_period`
     /// this transfers the amount to the elected beneficiary.
@@ -100,17 +115,18 @@ contract Charles{
     /// @param _period which periods budget should be payed out?
     /// @param _committer which committer are we talking about?
     /// only witness or committer can payout.
-    function payout(uint _period, address _committer) public payable{
+    function payout(uint _period, address _committer) internal{
        
         var c = commited[_committer];
         require (msg.sender == c.committer || msg.sender == c.witness);
-        var amount = c.amount / c.frequency; //TODO: solve binary division rounding problem
+        var amount = c.amount / c.frequency; 
         var beneficiary = c.giveTo[_period];
         require (beneficiary != address(0));
         require (beneficiary != ALREADY_PAYED); // saves  from reentrancy
         c.giveTo[_period]=  ALREADY_PAYED;
+        c.remainingBudget = c.amount - amount;
         beneficiary.transfer(amount); 
-        
+        msg.sender.transfer(c.testemonyReward);
         PaidOut(beneficiary, amount, c.pledge);
     }
     event PaidOut(address indexed beneficiary, uint amount, bytes32 indexed pledge);
