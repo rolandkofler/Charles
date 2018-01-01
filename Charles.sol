@@ -6,8 +6,8 @@ contract ACharlesTester{
     
     function tst() public payable {
         bytes32 pledge= keccak256("I want to not drink alcohol more than once a week. My witness will randomly check by asking me to blow into a tester");
-        c.commitToPrivately(now, pledge, this, 1 days , 14, c.THE_DAO_HACKER(), 1000000);
-        c.witnessTo(this, 0, true);
+        c.commitToPrivately.value(1414)(now, pledge, 0xca35b7d915458ef540ade6068dfe2f44e8fa733c, 1 days , 14, c.THE_DAO_HACKER(), 1);
+        //c.witnessTo(this, 0, true);
         
     }
 }
@@ -19,7 +19,6 @@ contract Charles{
     address constant public THE_DAO_HACKER= 0xF35e2cC8E6523d683eD44870f5B7cC785051a77D; // if you wanna donate to hacker, according to http://hackingdistributed.com/2016/06/18/analysis-of-the-dao-exploit/
     address constant public THE_FROZEN_PARITY_WALLET= 0x863DF6BFa4469f3ead0bE8f9F2AAE51c91A907b4; // if you wanna freeze https://github.com/paritytech/parity/issues/6995
     
-    address constant public ALREADY_PAYED = address(0xdeadbeef);
     
     struct Commitment{
         address committer;
@@ -30,7 +29,7 @@ contract Charles{
         uint32 frequency;
         uint startTime;
         uint amount;
-        address[] giveTo;
+        address[] givenTo;
         uint remainingBudget;
         uint testemonyReward;
     }
@@ -38,9 +37,10 @@ contract Charles{
     mapping (address => Commitment) public commited;
     
     /** Getters **/
-    function getGiveTo(address _committer, uint _period) public view returns (address){
+    // @returns true if period was witnessed by witness or reclaimed by commiter
+    function givenTo(address _committer) public view returns (address[]){
         var c = commited[_committer];
-        return c.giveTo[_period];
+        return c.givenTo;
     }
     
     
@@ -53,27 +53,31 @@ contract Charles{
     /// @param _frequency number of periods to consider
     /// @param _anticharity what you hate?
     function commitToPublicly(uint _starttime, string _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) external payable{
-        commitTo(_starttime, keccak256( _pledge),  _witness,  _interval,  _frequency, _anticharity, _testemonyReward);
-        NewPublicCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward);
+        commitTo(_starttime, keccak256( _pledge),  _witness,  _interval,  _frequency, _anticharity, _testemonyReward, msg.value);
+        NewPublicCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward, msg.value);
     }
-    event NewPublicCommitmentCreated(uint _starttime, address indexed committer, string pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity, uint _testemonyReward);
+    event NewPublicCommitmentCreated(uint _starttime, address indexed committer, string pledge, address indexed witness, uint period, uint frequency, address indexed anticharity, uint testemonyReward, uint amountSent);
     
     /// @dev same as commitToPublicly but pledge is private
     function commitToPrivately(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) public payable
     {
-        commitTo(_starttime, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward);
+        commitTo(_starttime, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward, msg.value);
         
-        NewPrivateCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward);
+        NewPrivateCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward, msg.value);
     }
-    event NewPrivateCommitmentCreated(uint _starttime, address indexed committer, bytes32 pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity, uint _testemonyReward);
-    
+    event NewPrivateCommitmentCreated(uint _starttime, address indexed committer, bytes32 pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity, uint _testemonyReward, uint amountSent);
+
     /// @dev instantiation of a commitment
-    function commitTo(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) internal {
+    function commitTo(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward, uint amountSent) internal{
         require(commited[msg.sender].remainingBudget == 0); // old commitment should be already drained to create new
-        var totalBounty = msg.value - (_frequency * _testemonyReward);
+        var totalTestemonyRewards = (_frequency * _testemonyReward);
+        
+        require(msg.value >= totalTestemonyRewards);
+       
+        var totalBounty = msg.value - totalTestemonyRewards;
         require(totalBounty % _frequency == 0); // we only accept integer divisible amounts
-        require( _anticharity != ALREADY_PAYED); // reserved address 
         require( _anticharity != address(0)); // reserved address
+        require(_witness != address(0));
         address[] memory w = new address[](_frequency);
         var c =Commitment(msg.sender,_anticharity,  _pledge, _witness, _interval, _frequency, _starttime, msg.value, w, totalBounty, _testemonyReward);
         commited[msg.sender]= c;
@@ -83,16 +87,14 @@ contract Charles{
     /// @dev adds anticharity or beneficiary to giveTo[_period]
     /// time constraints are not enforced on purpose, a witness can witness into the future
     /// Philosophically, witness has to be trusted.
-    /// If not paid out already you can always overwrite your decision
     function witnessTo(address _committer, uint _period, bool _isBreached) external 
     {
         var c = commited[_committer];
         require (c.witness == msg.sender);
-        require( c.giveTo[_period] != ALREADY_PAYED);
+        require( c.givenTo[_period] == address(0));
         var beneficiary= _isBreached ? c.anticharity : c.committer;
-        c.giveTo[_period] = beneficiary;
         CommitmentWitnessed(c.committer, c.pledge, c.witness, _period, _isBreached);
-        payout(_period, c.committer);
+        payout(_period, c.committer, beneficiary);
     }
     event CommitmentWitnessed(address indexed committer, bytes32 indexed pledge, address witness, uint period, bool isBreached);
     
@@ -101,11 +103,10 @@ contract Charles{
     /// this helps also if the witness is hindered to free the budget 
     function reclaimUnwitnessedPeriod(uint _period) external{
         var c = commited[msg.sender];
-        require( c.giveTo[_period] != ALREADY_PAYED);
+        require( c.givenTo[_period] == address(0));
         require (now > c.startTime + (_period + 1) * c.interval); //possible only if you let whitness time for one period after this
-        c.giveTo[_period] =  c.committer;
         ReclaimedUnwitnessedBounty(c.committer, c.pledge, _period);
-        payout(_period, c.committer);
+        payout(_period, c.committer, c.committer);
     }
     event ReclaimedUnwitnessedBounty(address indexed committer, bytes32 indexed pledge, uint period);
     
@@ -115,20 +116,16 @@ contract Charles{
     /// @param _period which periods budget should be payed out?
     /// @param _committer which committer are we talking about?
     /// only witness or committer can payout.
-    function payout(uint _period, address _committer) internal{
+    function payout(uint _period, address _committer, address _beneficiary) internal{
        
         var c = commited[_committer];
         require (msg.sender == c.committer || msg.sender == c.witness);
         var amount = c.amount / c.frequency; 
-        var beneficiary = c.giveTo[_period];
-        require (beneficiary != address(0));
-        require (beneficiary != ALREADY_PAYED); // saves  from reentrancy
-        c.giveTo[_period]=  ALREADY_PAYED;
-        c.remainingBudget = c.amount - amount;
-        beneficiary.transfer(amount); 
+        c.givenTo[_period]=  _beneficiary;
+        c.remainingBudget = c.remainingBudget - amount;
+        _beneficiary.transfer(amount); 
         msg.sender.transfer(c.testemonyReward);
-        PaidOut(beneficiary, amount, c.pledge);
     }
-    event PaidOut(address indexed beneficiary, uint amount, bytes32 indexed pledge);
+
     
 }
