@@ -12,7 +12,11 @@ contract ACharlesTester{
     }
 }
 
-// Charles is a Monkey that loves Commitment Contracts
+/** @title Charles is a monkey that loves Commitment Contracts
+    @notice create commitment contracts and get rid of bad habits
+    @author Roland Kofler
+    Audited by Ronan Sandford
+*/ 
 contract Charles{
     
     // some possible anticharites
@@ -52,6 +56,7 @@ contract Charles{
     /// @param _interval how long one period of the pledge is in seconds
     /// @param _frequency number of periods to consider
     /// @param _anticharity what you hate?
+    /// @param _testemonyReward what does the witness get for each testimony?
     function commitToPublicly(uint _starttime, string _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) external payable{
         commitTo(_starttime, keccak256( _pledge),  _witness,  _interval,  _frequency, _anticharity, _testemonyReward, msg.value);
         NewPublicCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward, msg.value);
@@ -115,6 +120,7 @@ contract Charles{
     /// flaw here is that its not automatically sent to the anticharity
     /// @param _period which periods budget should be payed out?
     /// @param _committer which committer are we talking about?
+    /// @param _beneficiary who gets the bounty
     /// only witness or committer can payout.
     function payout(uint _period, address _committer, address _beneficiary) internal{
        
