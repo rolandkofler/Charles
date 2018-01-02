@@ -31,6 +31,7 @@ contract Charles{
         address witness; 
         uint32 interval; 
         uint32 frequency;
+        uint32 periodsLeft;
         uint startTime;
         uint amount;
         address[] givenTo;
@@ -41,7 +42,7 @@ contract Charles{
     mapping (address => Commitment) public commited;
     
     /** Getters **/
-    // @returns true if period was witnessed by witness or reclaimed by commiter
+    // @returns beneficiary address if period was witnessed by witness or reclaimed by commiter, or 0
     function givenTo(address _committer) public view returns (address[]){
         var c = commited[_committer];
         return c.givenTo;
@@ -58,7 +59,7 @@ contract Charles{
     /// @param _anticharity what you hate?
     /// @param _testemonyReward what does the witness get for each testimony?
     function commitToPublicly(uint _starttime, string _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) external payable{
-        commitTo(_starttime, keccak256( _pledge),  _witness,  _interval,  _frequency, _anticharity, _testemonyReward, msg.value);
+        commitTo(_starttime, keccak256( _pledge),  _witness,  _interval,  _frequency, _anticharity, _testemonyReward);
         NewPublicCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward, msg.value);
     }
     event NewPublicCommitmentCreated(uint _starttime, address indexed committer, string pledge, address indexed witness, uint period, uint frequency, address indexed anticharity, uint testemonyReward, uint amountSent);
@@ -66,25 +67,22 @@ contract Charles{
     /// @dev same as commitToPublicly but pledge is private
     function commitToPrivately(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) public payable
     {
-        commitTo(_starttime, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward, msg.value);
+        commitTo(_starttime, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward);
         
         NewPrivateCommitmentCreated(_starttime, msg.sender, _pledge, _witness, _interval, _frequency, _anticharity, _testemonyReward, msg.value);
     }
     event NewPrivateCommitmentCreated(uint _starttime, address indexed committer, bytes32 pledge, address indexed witness, uint period, uint frequency, address indexed _anticharity, uint _testemonyReward, uint amountSent);
 
     /// @dev instantiation of a commitment
-    function commitTo(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward, uint amountSent) internal{
-        require(commited[msg.sender].remainingBudget == 0); // old commitment should be already drained to create new
+    function commitTo(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) internal{
+        require(commited[msg.sender].periodsLeft == 0); // old commitment should be already drained to create new
         var totalTestemonyRewards = (_frequency * _testemonyReward);
-        
-        require(msg.value >= totalTestemonyRewards);
-       
         var totalBounty = msg.value - totalTestemonyRewards;
         require(totalBounty % _frequency == 0); // we only accept integer divisible amounts
         require( _anticharity != address(0)); // reserved address
         require(_witness != address(0));
         address[] memory w = new address[](_frequency);
-        var c =Commitment(msg.sender,_anticharity,  _pledge, _witness, _interval, _frequency, _starttime, msg.value, w, totalBounty, _testemonyReward);
+        var c =Commitment(msg.sender,_anticharity,  _pledge, _witness, _interval, _frequency, _frequency, _starttime, totalBounty, w, totalBounty, _testemonyReward);
         commited[msg.sender]= c;
     }
     
@@ -129,9 +127,8 @@ contract Charles{
         var amount = c.amount / c.frequency; 
         c.givenTo[_period]=  _beneficiary;
         c.remainingBudget = c.remainingBudget - amount;
+        c.periodsLeft= c.periodsLeft - 1;
         _beneficiary.transfer(amount); 
         msg.sender.transfer(c.testemonyReward);
-    }
-
-    
+    }   
 }
