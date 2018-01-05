@@ -77,6 +77,9 @@ contract Charles{
     function commitTo(uint _starttime, bytes32 _pledge, address _witness, uint32 _interval, uint32 _frequency, address _anticharity, uint _testemonyReward) internal{
         require(commited[msg.sender].periodsLeft == 0); // old commitment should be already drained to create new
         var totalTestemonyRewards = (_frequency * _testemonyReward);
+        require(msg.value >= totalTestemonyRewards); //underflow protection
+        require(_frequency > 0);
+        require(_interval > 0);
         var totalBounty = msg.value - totalTestemonyRewards;
         require(totalBounty % _frequency == 0); // we only accept integer divisible amounts
         require( _anticharity != address(0)); // reserved address
@@ -130,5 +133,7 @@ contract Charles{
         c.periodsLeft= c.periodsLeft - 1;
         _beneficiary.transfer(amount); 
         msg.sender.transfer(c.testemonyReward);
-    }   
+    }
+
+   
 }
