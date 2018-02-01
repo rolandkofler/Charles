@@ -1,5 +1,7 @@
 # Charles the Commitment Contract
+resources:
 https://medium.com/@rolandk/new-years-resolutions-the-smart-contract-way-464d448e3be5
+https://drive.google.com/drive/folders/10aDzr1rK9qUVZwDcYIg8f7tWTI_EDTL7
 ````
 ┈┈┈┈┈┈┈┈┈┈┈?????????????
 ┈┈╱▔▔▔▔▔╲┈┈┈??????????
